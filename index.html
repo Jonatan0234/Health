@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de tensión arterial – Jonatan Cuesta Cardona</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f4f6f9; color: #1c1c1e; padding: 1rem;
+        }
+        .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
+        .header { text-align: center; }
+        .header h1 { font-size: 1.9rem; font-weight: 700; }
+        .header .fecha-rango { color: #6e6e73; font-size: 1rem; }
+
+        .csv-upload { text-align: center; }
+        .btn-csv {
+            background: #007aff; color: white; border: none; padding: 0.8rem 2rem;
+            border-radius: 2rem; font-size: 1rem; font-weight: 600; cursor: pointer; transition: 0.2s;
+            box-shadow: 0 2px 6px rgba(0,122,255,0.3);
+        }
+        .btn-csv:active { transform: scale(0.97); }
+
+        .clasificaciones { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; }
+        .clasif-card {
+            flex: 1 1 150px; min-width: 130px; background: white; border-radius: 1rem;
+            padding: 1rem; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            cursor: pointer; transition: 0.2s; border: 2px solid transparent;
+            user-select: none;
+        }
+        .clasif-card:active { transform: scale(0.98); }
+        .clasif-card.seleccionado {
+            border-color: #007aff;
+            box-shadow: 0 0 0 3px rgba(0,122,255,0.2);
+        }
+        .clasif-card .num { font-size: 2rem; font-weight: 700; }
+        .clasif-card .etiqueta { font-size: 0.85rem; color: #6e6e73; }
+        .no-elevada .num { color: #34c759; }
+        .elevada .num { color: #ff9f40; }
+        .hipertension .num { color: #ff3b30; }
+        .emergencia .num { color: #af52de; }
+
+        .filtro-periodo {
+            display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center;
+            background: white; padding: 0.8rem; border-radius: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        .btn-periodo {
+            flex: 1 0 auto; background: #efeff4; border: none; padding: 0.6rem 1rem;
+            border-radius: 2rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: 0.2s;
+        }
+        .btn-periodo.activo { background: #007aff; color: white; }
+
+        .card { background: white; border-radius: 1.2rem; padding: 1.2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .card h2 { font-size: 1.2rem; margin-bottom: 0.8rem; }
+        .tabla-contenedor {
+            max-height: 500px; overflow-y: auto; border-radius: 0.5rem; border: 1px solid #e5e5ea;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { padding: 0.5rem 0.6rem; text-align: center; border-bottom: 1px solid #f0f0f5; vertical-align: top; }
+        th { background: #f9f9fc; font-weight: 600; position: sticky; top: 0; z-index: 2; }
+        td.fecha { font-weight: 600; }
+        .lectura { display: block; margin-bottom: 2px; }
+
+        .grafico-contenedor { position: relative; height: 360px; width: 100%; margin-top: 0.5rem; }
+        .leyenda { font-size: 0.75rem; color: #6e6e73; text-align: center; margin-top: 0.3rem; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📋 Registro de la tensión arterial</h1>
+        <p class="fecha-rango" id="rangoMostrado">Cargue un archivo CSV para comenzar</p>
+    </div>
+
+    <div class="csv-upload">
+        <button class="btn-csv" id="btnCargarCSV">📂 Cargar archivo CSV</button>
+        <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
+    </div>
+
+    <!-- Tarjetas de clasificación (clicables) -->
+    <div class="clasificaciones" id="clasificacionesContainer">
+        <div class="clasif-card no-elevada" data-clase="no_elevada">
+            <div class="num">-</div><div class="etiqueta">Normal</div>
+        </div>
+        <div class="clasif-card elevada" data-clase="elevada">
+            <div class="num">-</div><div class="etiqueta">Normal alta</div>
+        </div>
+        <div class="clasif-card hipertension" data-clase="hipertension">
+            <div class="num">-</div><div class="etiqueta">Hipertensión</div>
+        </div>
+        <div class="clasif-card emergencia" data-clase="emergencia">
+            <div class="num">-</div><div class="etiqueta">Emergencia</div>
+        </div>
+    </div>
+
+    <div class="filtro-periodo" id="filtroPeriodo">
+        <button class="btn-periodo activo" data-periodo="todos">📅 Todos</button>
+        <button class="btn-periodo" data-periodo="1a">1 año</button>
+        <button class="btn-periodo" data-periodo="6m">6 meses</button>
+        <button class="btn-periodo" data-periodo="3m">3 meses</button>
+        <button class="btn-periodo" data-periodo="1m">1 mes</button>
+        <button class="btn-periodo" data-periodo="1s">1 semana</button>
+    </div>
+
+    <!-- GRÁFICA PRESIÓN -->
+    <div class="card">
+        <h2>📈 Presión arterial (mmHg)</h2>
+        <div class="grafico-contenedor"><canvas id="bpChart"></canvas></div>
+        <div class="leyenda">Fondo: verde normal, amarillo elevado, rojo hipertensión (según sistólica)</div>
+    </div>
+
+    <!-- GRÁFICA FRECUENCIA CARDÍACA -->
+    <div class="card">
+        <h2>❤️ Frecuencia cardíaca (lpm)</h2>
+        <div class="grafico-contenedor"><canvas id="hrChart"></canvas></div>
+        <div class="leyenda">Promedio diario de frecuencia cardíaca</div>
+    </div>
+
+    <!-- TABLA con Mañana / Tarde / Noche -->
+    <div class="card">
+        <h2>🩺 Valores registrados de presión</h2>
+        <div class="tabla-contenedor" id="tablaContainer"></div>
+    </div>
+</div>
+
+<script>
+(function() {
+    // ================================================================
+    // SIN DATOS INICIALES – SE CARGAN DESDE CSV
+    // ================================================================
+    let lecturas = []; // { fecha, hora, sys, dia, hr }
+
+    let bpChart, hrChart;
+    let periodoActual = 'todos';
+    let claseSeleccionada = null;
+
+    // ---------- PARSEO DE CSV (formato bp.csv) ----------
+    function parsearCSV(texto) {
+        const lineas = texto.trim().split(/\r?\n/);
+        if (lineas.length < 2) { alert('El archivo CSV está vacío.'); return; }
+
+        const cabecera = lineas[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.replace(/^"|"$/g, '').trim());
+        const idxFecha = cabecera.findIndex(h => h === 'Fecha');
+        const idxHR = cabecera.findIndex(h => h === 'Frecuencia cardíaca');
+        const idxSistolica = cabecera.findIndex(h => h === 'Sistólica');
+        const idxDiastolica = cabecera.findIndex(h => h === 'Diastólica');
+
+        if (idxFecha === -1 || idxHR === -1 || idxSistolica === -1 || idxDiastolica === -1) {
+            alert(`El CSV debe tener las columnas: Fecha, Frecuencia cardíaca, Sistólica, Diastólica.\nCabeceras detectadas: ${cabecera.join(', ')}`);
+            return;
+        }
+
+        const nuevasLecturas = [];
+        for (let i = 1; i < lineas.length; i++) {
+            if (!lineas[i].trim()) continue;
+            const columnas = lineas[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+            if (columnas.length <= Math.max(idxFecha, idxHR, idxSistolica, idxDiastolica)) continue;
+
+            const fechaHora = columnas[idxFecha];
+            const hr = parseInt(columnas[idxHR], 10);
+            const sistolica = columnas[idxSistolica];
+            const diastolica = columnas[idxDiastolica];
+
+            // Solo agregamos si hay presión arterial
+            if (!sistolica || !diastolica) continue;
+
+            const [fecha, horaCompleta] = fechaHora.split(' ');
+            const hora = horaCompleta ? horaCompleta.substring(0,5) : '00:00';
+            const sys = parseInt(sistolica, 10);
+            const dia = parseInt(diastolica, 10);
+            if (isNaN(sys) || isNaN(dia)) continue;
+
+            nuevasLecturas.push({ fecha, hora, sys, dia, hr: isNaN(hr) ? null : hr });
+        }
+
+        if (nuevasLecturas.length === 0) {
+            alert('No se encontraron lecturas de presión arterial válidas.');
+            return;
+        }
+
+        lecturas = nuevasLecturas;
+        lecturas.sort((a,b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
+        actualizarTodo();
+    }
+
+    // ---------- CARGA DE ARCHIVO ----------
+    const fileInput = document.getElementById('csvFileInput');
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev) { parsearCSV(ev.target.result); };
+        reader.readAsText(file);
+    });
+    document.getElementById('btnCargarCSV').addEventListener('click', () => fileInput.click());
+
+    // ---------- FILTRO DE PERIODO ----------
+    function obtenerLimitePeriodo(periodo) {
+        if (!lecturas.length) return null;
+        const fechas = lecturas.map(l => l.fecha);
+        const fechaMax = fechas.reduce((a,b) => a > b ? a : b);
+        const hoy = new Date(fechaMax + 'T00:00:00');
+        let inicio = new Date(hoy);
+        switch(periodo) {
+            case '1s': inicio.setDate(hoy.getDate() - 7); break;
+            case '1m': inicio.setMonth(hoy.getMonth() - 1); break;
+            case '3m': inicio.setMonth(hoy.getMonth() - 3); break;
+            case '6m': inicio.setMonth(hoy.getMonth() - 6); break;
+            case '1a': inicio.setFullYear(hoy.getFullYear() - 1); break;
+            default: return null;
+        }
+        return inicio.toISOString().split('T')[0];
+    }
+
+    function filtrarPorPeriodo(datos) {
+        const limite = obtenerLimitePeriodo(periodoActual);
+        if (!limite) return datos.slice();
+        return datos.filter(l => l.fecha >= limite);
+    }
+
+    // ---------- CLASIFICACIÓN ESC ----------
+    function clasificarPresion(sys, dia) {
+        if (sys > 180 || dia > 120) return 'emergencia';
+        if (sys >= 140 || dia >= 90) return 'hipertension';
+        if ((sys >= 130 && sys <= 139) || (dia >= 85 && dia <= 89)) return 'elevada';
+        return 'no_elevada';
+    }
+
+    function promediosDiarios(datos) {
+        const porDia = {};
+        datos.forEach(lectura => {
+            if (!porDia[lectura.fecha]) porDia[lectura.fecha] = {
+                sysTotal:0, diaTotal:0, hrTotal:0, count:0, lecturas: []
+            };
+            porDia[lectura.fecha].sysTotal += lectura.sys;
+            porDia[lectura.fecha].diaTotal += lectura.dia;
+            if (lectura.hr !== null && lectura.hr !== undefined && !isNaN(lectura.hr)) {
+                porDia[lectura.fecha].hrTotal += lectura.hr;
+            }
+            porDia[lectura.fecha].count++;
+            porDia[lectura.fecha].lecturas.push(lectura);
+        });
+
+        const promedios = [];
+        for (let fecha in porDia) {
+            const d = porDia[fecha];
+            const sysMedio = Math.round(d.sysTotal / d.count);
+            const diaMedio = Math.round(d.diaTotal / d.count);
+            const hrMedio = d.hrTotal ? Math.round(d.hrTotal / d.count) : null;
+            const clase = clasificarPresion(sysMedio, diaMedio);
+            promedios.push({
+                fecha,
+                sys: sysMedio,
+                dia: diaMedio,
+                hr: hrMedio,
+                clase,
+                lecturas: d.lecturas
+            });
+        }
+        promedios.sort((a,b) => a.fecha.localeCompare(b.fecha));
+        return promedios;
+    }
+
+    // ---------- ACTUALIZAR COMPONENTES ----------
+    function actualizarClasificaciones(promedios) {
+        const cuenta = { no_elevada:0, elevada:0, hipertension:0, emergencia:0 };
+        promedios.forEach(p => cuenta[p.clase]++);
+        document.querySelector('.no-elevada .num').textContent = cuenta.no_elevada;
+        document.querySelector('.elevada .num').textContent = cuenta.elevada;
+        document.querySelector('.hipertension .num').textContent = cuenta.hipertension;
+        document.querySelector('.emergencia .num').textContent = cuenta.emergencia;
+    }
+
+    function actualizarTabla(promediosFiltrados) {
+        if (!lecturas.length) {
+            document.getElementById('tablaContainer').innerHTML = '<p style="padding:2rem;text-align:center;">Cargue un archivo CSV para ver los datos.</p>';
+            return;
+        }
+        const agrupado = {};
+        promediosFiltrados.forEach(prom => {
+            prom.lecturas.forEach(lectura => {
+                const fecha = lectura.fecha;
+                const horaNum = parseInt(lectura.hora.split(':')[0], 10);
+                let periodo;
+                if (horaNum < 12) periodo = 'manana';
+                else if (horaNum < 20) periodo = 'tarde';
+                else periodo = 'noche';
+                if (!agrupado[fecha]) agrupado[fecha] = { manana: [], tarde: [], noche: [] };
+                agrupado[fecha][periodo].push(`${lectura.sys}/${lectura.dia}, ${lectura.hora}`);
+            });
+        });
+
+        const fechas = Object.keys(agrupado).sort((a,b) => b.localeCompare(a));
+        let html = `<table><thead><tr><th>Fecha</th><th>Mañana</th><th>Tarde</th><th>Noche</th></tr></thead><tbody>`;
+        if (fechas.length === 0) {
+            html += `<tr><td colspan="4" style="padding:2rem;">No hay lecturas en este período.</td></tr>`;
+        } else {
+            fechas.forEach(fecha => {
+                const dia = agrupado[fecha];
+                const mananaHtml = dia.manana.length ? dia.manana.map(l => `<span class="lectura">${l}</span>`).join('') : '—';
+                const tardeHtml   = dia.tarde.length   ? dia.tarde.map(l => `<span class="lectura">${l}</span>`).join('') : '—';
+                const nocheHtml   = dia.noche.length   ? dia.noche.map(l => `<span class="lectura">${l}</span>`).join('') : '—';
+                html += `<tr><td class="fecha">${fecha}</td><td>${mananaHtml}</td><td>${tardeHtml}</td><td>${nocheHtml}</td></tr>`;
+            });
+        }
+        html += '</tbody></table>';
+        document.getElementById('tablaContainer').innerHTML = html;
+    }
+
+    function actualizarGraficoBP(promediosFiltrados) {
+        if (bpChart) bpChart.destroy();
+        if (!lecturas.length) return;
+
+        const labels = promediosFiltrados.map(d => d.fecha);
+        const sysData = promediosFiltrados.map(d => d.sys);
+        const diaData = promediosFiltrados.map(d => d.dia);
+
+        bpChart = new Chart(document.getElementById('bpChart'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Sistólica',
+                        data: sysData,
+                        borderColor: '#007aff',
+                        backgroundColor: 'transparent',
+                        tension: 0.2,
+                        pointRadius: 3,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Diastólica',
+                        data: diaData,
+                        borderColor: '#34c759',
+                        backgroundColor: 'transparent',
+                        tension: 0.2,
+                        pointRadius: 3,
+                        borderWidth: 2,
+                        borderDash: [5,3]
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    tooltip: { mode: 'index' },
+                    legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Fecha' } },
+                    y: {
+                        title: { display: true, text: 'mmHg' },
+                        min: 40,
+                        max: 190,
+                        grid: { color: '#e0e0e0' }
+                    }
+                }
+            },
+            plugins: [
+                {
+                    id: 'zonasRiesgo',
+                    beforeDraw(chart) {
+                        const { ctx, chartArea, scales } = chart;
+                        const yScale = scales.y;
+                        const y120 = yScale.getPixelForValue(120);
+                        const y140 = yScale.getPixelForValue(140);
+                        const yTop = chartArea.top;
+                        const yBottom = chartArea.bottom;
+
+                        ctx.save();
+                        ctx.fillStyle = 'rgba(52, 199, 89, 0.12)';
+                        ctx.fillRect(chartArea.left, y120, chartArea.width, yBottom - y120);
+                        ctx.fillStyle = 'rgba(255, 159, 64, 0.12)';
+                        ctx.fillRect(chartArea.left, y140, chartArea.width, y120 - y140);
+                        ctx.fillStyle = 'rgba(255, 59, 48, 0.12)';
+                        ctx.fillRect(chartArea.left, yTop, chartArea.width, y140 - yTop);
+                        ctx.restore();
+                    }
+                },
+                {
+                    id: 'lineasReferencia',
+                    afterDraw(chart) {
+                        const { ctx, chartArea, scales } = chart;
+                        const yScale = scales.y;
+                        const y120 = yScale.getPixelForValue(120);
+                        const y80 = yScale.getPixelForValue(80);
+
+                        ctx.save();
+                        ctx.strokeStyle = '#4a4a4a';
+                        ctx.lineWidth = 1.5;
+                        ctx.setLineDash([6,4]);
+                        if (y120 >= chartArea.top && y120 <= chartArea.bottom) {
+                            ctx.beginPath();
+                            ctx.moveTo(chartArea.left, y120);
+                            ctx.lineTo(chartArea.right, y120);
+                            ctx.stroke();
+                        }
+                        ctx.strokeStyle = '#e74c3c';
+                        if (y80 >= chartArea.top && y80 <= chartArea.bottom) {
+                            ctx.beginPath();
+                            ctx.moveTo(chartArea.left, y80);
+                            ctx.lineTo(chartArea.right, y80);
+                            ctx.stroke();
+                        }
+                        ctx.restore();
+                    }
+                }
+            ]
+        });
+    }
+
+    function actualizarGraficoHR(promediosFiltrados) {
+        if (hrChart) hrChart.destroy();
+        if (!lecturas.length) return;
+
+        const labels = promediosFiltrados.map(d => d.fecha);
+        const hrData = promediosFiltrados.map(d => d.hr);
+
+        hrChart = new Chart(document.getElementById('hrChart'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Frecuencia cardíaca (lpm)',
+                        data: hrData,
+                        borderColor: '#ff3b30',
+                        backgroundColor: 'transparent',
+                        tension: 0.2,
+                        pointRadius: 3,
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    tooltip: { mode: 'index' },
+                    legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Fecha' } },
+                    y: {
+                        title: { display: true, text: 'lpm' },
+                        min: 40,
+                        max: 180,
+                        grid: { color: '#e0e0e0' }
+                    }
+                }
+            }
+        });
+    }
+
+    function actualizarTodo() {
+        if (!lecturas.length) {
+            document.getElementById('rangoMostrado').textContent = 'Cargue un archivo CSV para comenzar';
+            document.querySelector('.no-elevada .num').textContent = '-';
+            document.querySelector('.elevada .num').textContent = '-';
+            document.querySelector('.hipertension .num').textContent = '-';
+            document.querySelector('.emergencia .num').textContent = '-';
+            document.getElementById('tablaContainer').innerHTML = '<p style="padding:2rem;text-align:center;">No hay datos. Utilice el botón para cargar un archivo CSV.</p>';
+            if (bpChart) bpChart.destroy();
+            if (hrChart) hrChart.destroy();
+            return;
+        }
+
+        const datosPeriodo = filtrarPorPeriodo(lecturas);
+        const promedios = promediosDiarios(datosPeriodo);
+        actualizarClasificaciones(promedios);
+
+        let promediosFiltrados = promedios;
+        if (claseSeleccionada) {
+            promediosFiltrados = promedios.filter(p => p.clase === claseSeleccionada);
+        }
+
+        if (promediosFiltrados.length > 0) {
+            const fechas = promediosFiltrados.map(p => p.fecha);
+            document.getElementById('rangoMostrado').textContent = `${fechas[0]} – ${fechas[fechas.length-1]}`;
+        } else {
+            document.getElementById('rangoMostrado').textContent = 'Sin datos';
+        }
+
+        actualizarTabla(promediosFiltrados);
+        actualizarGraficoBP(promediosFiltrados);
+        actualizarGraficoHR(promediosFiltrados);
+    }
+
+    // ---------- EVENTOS ----------
+    document.querySelectorAll('.btn-periodo').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.btn-periodo').forEach(b => b.classList.remove('activo'));
+            this.classList.add('activo');
+            periodoActual = this.dataset.periodo;
+            actualizarTodo();
+        });
+    });
+
+    document.querySelectorAll('.clasif-card').forEach(card => {
+        card.addEventListener('click', function() {
+            const clase = this.dataset.clase;
+            if (claseSeleccionada === clase) {
+                claseSeleccionada = null;
+                this.classList.remove('seleccionado');
+            } else {
+                document.querySelectorAll('.clasif-card').forEach(c => c.classList.remove('seleccionado'));
+                claseSeleccionada = clase;
+                this.classList.add('seleccionado');
+            }
+            actualizarTodo();
+        });
+    });
+
+    // Inicializar vacío
+    actualizarTodo();
+})();
+</script>
+</body>
+</html>
